@@ -1,13 +1,14 @@
 #include <stdlib.h>
-#include <stdio.h>
+//#include <iostream>
+//#include <stdio.h>
 #include <curses.h>
 //#include <time.h>
 #include <unistd.h>
 
 typedef int_fast8_t s8;
 typedef uint_fast8_t u8;
-typedef int_fast8_t sq;
-typedef uint_fast8_t uq;
+typedef int_fast8_t s0;
+typedef uint_fast8_t u0;
 //typedef int_fast16_t s16;
 //typedef uint_fast16_t u16;
 //typedef int_fast32_t s32;
@@ -16,41 +17,51 @@ typedef uint_fast8_t uq;
 //typedef uint_fast64_t u64;
 
 
-#define SIZE 25
-#define MAX_SIZE (uq) -1
+#define WHEIGHT 23
+#define WWIDTH 80
+#define SIZE 18 //wysokość okna planszy -PR-
+#define MAX_SIZE ((u0) -1) // -PR-
 #define WIDTH 68
-#define MARGIN (80-WIDTH)/2
+#define MARGIN (WWIDTH-WIDTH)/2
 
 
 typedef struct {
-	uq frog = '@';
-	uq bocian = '%';
-	uq ups = 20; // updates / s
+	u8 frog = '@';
+	u8 bocian = '%';
+	u8 ups = 20; // updates / s
+	u8 fspeed = 2; // updates / frog speed
+	u8 bspeed = 10; // updates / bocian speed
 } config_t;
 
 typedef struct {
-	sq x;
-	sq y;
-	sq coutdown;
-	sq maxcoutdown;
+	s0 x;
+	s0 y;
+	s0 coutdown;
+	s0 maxcoutdown;
 } car_t;
+
 
 
 #define gamenull 0
 #define gameroad 1
 #define gamegrass 2
 #define gamewater 3
+#define gametrash 4
 
 typedef struct {
-	uq y = 0;
-	uq x = WIDTH/2;
+	u0 y = 0;
+	u0 last_pos_y = 0;
+	u0 x = WIDTH/2;
 	// „game” + „0-null 1-road 2-grass 3-water”
-	uq road[MAX_SIZE] = {};
+	u8 road[MAX_SIZE][WIDTH] = {};
 	
 } game_t;
 
 
-pos_t bocian(const pos_t);
+
+
+u8 bocian(game_t);
+u8 update(game_t);
 
 
 
@@ -64,6 +75,14 @@ void setcolors(void) {
 	init_pair(4, COLOR_BLACK, COLOR_BLUE);
 }
 
+void setmap(game_t * game) {
+	for (u0 y = 0; y < MAX_SIZE; y++) {
+		for (u0 x = 0; x < MAX_SIZE; x++) {
+			game -> road[y][x] = y%5;
+		}
+	}
+}
+
 game_t setup(void) {
     initscr();
 
@@ -72,6 +91,12 @@ game_t setup(void) {
     printf("Your terminal does not support color\n");
     exit(1);
     }
+    if (resizeterm(WHEIGHT, WWIDTH) != 0) {
+    endwin();
+    printf("Your terminal does not support resizing\n");
+    exit(1);
+    }
+
     setcolors();
 
 	//noecho();
@@ -80,7 +105,11 @@ game_t setup(void) {
     cbreak();
     keypad(stdscr, TRUE);
 
+
     game_t game;
+
+    setmap(&game);
+
     return game;
 }
 
@@ -129,151 +158,124 @@ void printint(int a) {
 	}
 }
 
-void printline(char a, int size) {
-	const char g = '.';
-	const char r = '-';
-	const char c = '=';
-	const char *p;
-	if (a == 1) {
-		attron(COLOR_PAIR(3));
-		p = &r;
-	} else if (a == 2) {
-		attron(COLOR_PAIR(4));
-		p = &c;
-	} else {
-		attron(COLOR_PAIR(2));
-		p = &g;
-	}
-	for (int i = 0; i < size; i++) {
-		addch(*p);
+
+void printline(u8 A[WIDTH], u8 c[4]) {
+	for (u0 x = {}; x < WIDTH; x += 1){
+		u8 a = A[x]%5;
+		if (a == gameroad) {
+			attron(COLOR_PAIR(3));
+		} else if (a == gamewater) {
+			attron(COLOR_PAIR(4));
+		} else {
+			attron(COLOR_PAIR(2));
+		}
+		addch(c[a]);
 	}
 }
 
-void printcar(char a, int size) {
-	const char g = '.';
-	const char r = '-';
-	const char c = '=';
-	const char *p;
-	if (a == 1) {
-		attron(COLOR_PAIR(3));
-		p = &r;
-	} else if (a == 2) {
-		attron(COLOR_PAIR(4));
-		p = &c;
-	} else {
-		attron(COLOR_PAIR(2));
-		p = &g;
-	}
-	for (int i = 0; i < size; i++) {
-		addch(*p);
-	}
-}
-
-void printroad(game_t game){ // Y and MaxY
-	const int size = 15;
-	static int last_pos_y = 0;
-	static char road[SIZE] = {}; //default 0
-	char t = road[0];
+u8 printroad(game_t * game, const config_t config){
+	static u8 c[5] = {};              // do konfig
+	c[gamenull] = '0';                //wywalić
+	c[gameroad] = '-';
+	c[gamegrass] = '.';
+	c[gamewater] = '=';
+	c[gametrash] = '%';
 	
-	if (last_pos_y < Y) {
-		for (int i = 0; i < size-1; i++)
-			road[i] = road[i+1];
-		if (MY > Y)
-			road[size-1] = t;
-		else
-			road[size-1] = 2;
-		last_pos_y += 1;
+	if (game->last_pos_y < game->y) {
+		game->last_pos_y += 1;
 	}
 	
-	for (int y = 0; y < size; y++) {
-		move(20-y, 6);
-		printline(road[y], WIDTH);
+	for (int y = 0; y < SIZE; y++) {
+		move(WHEIGHT -y -1, MARGIN);
+		printline(game->road[game->last_pos_y + y], c);
 	}
-	if (Y >= fy) return 2; //lose
-	if (fy >= SIZE+14) return 3; //win
-	//return 0;//printcar(road, MY, x, y);
+	//if (Y >= fy) return 2; //lose
+	//if (fy >= SIZE+14) return 3; //win
+	return 0;//printcar(road, MY, x, y);
 }
-
 
 
 
 // main function
 int main() {
 
-	int      width = 23, height = 7, rows = 25, cols = 80;
-    int      x = WIDTH/2, y = 3, bociany = 0, t = 0, status = 0;
+	s8 status = 0;
+
     config_t config;
-    
-    game_t g = setup();
+    game_t game = setup();
 
-    /*  Loop until user hits 'q' to quit  */
 
-    int      ch = 0;
-    while ( (ch = getch()) != 'q' and status < 2) { // {-1, 0, 1} car is moving a frog
-    
-    //key(game, ch);
+/*  Loop until user hits 'q' to quit  */
 
-	switch ( ch ) {
+	int      ch = 0;
+	while ( (ch = getch()) != 'q' and status < 2) { // {-1, 0, 1} car is moving a frog
 
-	case KEY_DOWN:
-	    if (g.y > bociany+1) {
-			--g.y;}
-	    break;
+//key(game, ch);
 
-	case KEY_UP:
-	    if (g.y < bociany+14) {
-			++g.y;
-		}
-	    break;
+switch ( ch ) {
 
-	case KEY_LEFT:
-	    if ( g.x > 0 )
-		--g.x;
-	    break;
-
-	case KEY_RIGHT:
-	    if ( g.x < (WIDTH-1) )
-		++g.x;
-	    break;
-
-	case KEY_HOME:
-	    g.x = 0;
-	    g.y = 0;
-	    break;
-
-	case KEY_END:
-	    g.x = (cols - width);
-	    g.y = (rows - height);
-	    break;
+case KEY_DOWN:
+    if (game.y > 0 and game.y+(SIZE/2) > game.last_pos_y) {
+		game.y--;
 	}
+    break;
+
+case KEY_UP:
+    if (game.y < MAX_SIZE) {
+		game.y++;
+	}
+    break;
+
+case KEY_LEFT:
+    if ( game.x > 0 )
+	--game.x;
+    break;
+
+case KEY_RIGHT:
+    if ( game.x < (WIDTH-1) )
+	++game.x;
+    break;
+
+case KEY_HOME:
+    game.x = 0;
+    game.y = 0;
+    break;
+
+//case KEY_END:
+//    game.x = (cols - width);
+//    game.y = (rows - height);
+//    break;
+}
+
+
 		clear();
 
-        status = printroad(bociany, SIZE, g.x, g.y);
+        status = printroad(&game, config);
 
 		attron(COLOR_PAIR(1));
 		move(0, 0);
-        printint(t);
+        printint(game.x);
 
 		attron(COLOR_PAIR(2));
 		move(20, 0);
-        printint(y);
+        printint(game.y);
 
-		attron(COLOR_PAIR(4));
-		move(21, 0);
-        printint(bociany);
+		//attron(COLOR_PAIR(4));
+		//move(21, 0);
+        //printint(bociany);
 
-		attron(COLOR_PAIR(1));
-		move(20, MARGIN+x);
-		addch(config.bocian);
+		//attron(COLOR_PAIR(1));
+		//move(20, MARGIN+x);
+		//addch(config.bocian);
 
 		attron(COLOR_PAIR(2));
-		move(20-y+bociany, MARGIN+x);
+		move(((WHEIGHT-(SIZE)/2))+game.last_pos_y-game.y -1, MARGIN+game.x);
 		addch(config.frog);
 
-		t += 1;
+		//t += 1;
     	refresh();
 		flushinp();
-    	usleep(1000000/config.ups);
+    	usleep(1e6/config.ups);
 
 		//bociany += bocian();
     }
@@ -292,7 +294,7 @@ int main() {
 
 
 // update functions
-void bocian(game_t A) {
+u0 bocian(game_t A) {
 	static char countdown = 0;
 	countdown += 1;
 	if (countdown > 10) return countdown = 1; //10
@@ -300,7 +302,7 @@ void bocian(game_t A) {
 }
 
 
-void update(game_t A) {
+u0 update(game_t A) {
 	static int gametime = 0;
 	gametime += 1;
 	return 0;
