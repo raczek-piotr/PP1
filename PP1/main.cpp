@@ -14,7 +14,12 @@ typedef uint_fast8_t u0;
 //typedef int_fast32_t s32;
 //typedef uint_fast32_t u32;
 //typedef int_fast64_t s64;
-//typedef uint_fast64_t u64;
+typedef uint_fast64_t u64;  //fast, at least 64bits; for time -PR-
+
+
+//u8 srand(u64);
+//u8 nrand(void);
+//u8 rand(void);
 
 
 #define WHEIGHT 23
@@ -26,9 +31,10 @@ typedef uint_fast8_t u0;
 
 
 typedef struct {
-	u8 frog = '@';
-	u8 bocian = '%';
-	u8 ups = 20; // updates / s
+	u64 seed;
+	char frog = '@';
+	char bocian = '%';
+	u8 ups = 10; // updates / s
 	u8 fspeed = 2; // updates / frog speed
 	u8 bspeed = 10; // updates / bocian speed
 } config_t;
@@ -42,16 +48,17 @@ typedef struct {
 
 
 
-#define gamenull 0
-#define gameroad 1
-#define gamegrass 2
+#define gameroad 0
+#define gamegrass 1
+#define gametrash 2
 #define gamewater 3
-#define gametrash 4
+#define gametypes 4
 
 typedef struct {
 	u0 y = 0;
-	u0 last_pos_y = 0;
 	u0 x = WIDTH/2;
+	u0 last_pos_y = 0;
+	u8 frogtime = 0;
 	// „game” + „0-null 1-road 2-grass 3-water”
 	u8 road[MAX_SIZE][WIDTH] = {};
 	
@@ -62,6 +69,7 @@ typedef struct {
 
 u8 bocian(game_t);
 u8 update(game_t);
+void key(game_t * game, int ch);
 
 
 
@@ -76,9 +84,15 @@ void setcolors(void) {
 }
 
 void setmap(game_t * game) {
-	for (u0 y = 0; y < MAX_SIZE; y++) {
+	for (u0 y = 0; y < (SIZE/2)+1; y++) {
 		for (u0 x = 0; x < MAX_SIZE; x++) {
-			game -> road[y][x] = y%5;
+			game -> road[y][x] = gamewater;
+		}
+	}
+	for (u0 y = (SIZE/2)+1; y < MAX_SIZE; y++) {
+		u8 V = (rand() % 3 == 0) ? gamegrass : gameroad;
+		for (u0 x = 0; x < MAX_SIZE; x++) {
+			game -> road[y][x] = V;
 		}
 	}
 }
@@ -159,9 +173,9 @@ void printint(int a) {
 }
 
 
-void printline(u8 A[WIDTH], u8 c[4]) {
+void printline(u8 A[WIDTH], u8 c[gametypes]) {
 	for (u0 x = {}; x < WIDTH; x += 1){
-		u8 a = A[x]%5;
+		u8 a = A[x];
 		if (a == gameroad) {
 			attron(COLOR_PAIR(3));
 		} else if (a == gamewater) {
@@ -174,8 +188,7 @@ void printline(u8 A[WIDTH], u8 c[4]) {
 }
 
 u8 printroad(game_t * game, const config_t config){
-	static u8 c[5] = {};              // do konfig
-	c[gamenull] = '0';                //wywalić
+	static u8 c[gametypes] = {};              // do konfig
 	c[gameroad] = '-';
 	c[gamegrass] = '.';
 	c[gamewater] = '=';
@@ -203,6 +216,8 @@ int main() {
 
     config_t config;
     game_t game = setup();
+    
+    srand(config.seed);
 
 
 /*  Loop until user hits 'q' to quit  */
@@ -210,42 +225,10 @@ int main() {
 	int      ch = 0;
 	while ( (ch = getch()) != 'q' and status < 2) { // {-1, 0, 1} car is moving a frog
 
-//key(game, ch);
-
-switch ( ch ) {
-
-case KEY_DOWN:
-    if (game.y > 0 and game.y+(SIZE/2) > game.last_pos_y) {
-		game.y--;
-	}
-    break;
-
-case KEY_UP:
-    if (game.y < MAX_SIZE) {
-		game.y++;
-	}
-    break;
-
-case KEY_LEFT:
-    if ( game.x > 0 )
-	--game.x;
-    break;
-
-case KEY_RIGHT:
-    if ( game.x < (WIDTH-1) )
-	++game.x;
-    break;
-
-case KEY_HOME:
-    game.x = 0;
-    game.y = 0;
-    break;
-
-//case KEY_END:
-//    game.x = (cols - width);
-//    game.y = (rows - height);
-//    break;
-}
+	if (game.frogtime >= config.fspeed) {
+		key(&game, ch);
+		game.frogtime = 0;
+	}	game.frogtime += 1;
 
 
 		clear();
@@ -295,15 +278,15 @@ case KEY_HOME:
 
 // update functions
 u0 bocian(game_t A) {
-	static char countdown = 0;
+	static u8 countdown = 0;
 	countdown += 1;
 	if (countdown > 10) return countdown = 1; //10
 	return 0;
 }
 
 
-u0 update(game_t A) {
-	static int gametime = 0;
+u0 update(game_t game) {
+	static u64 gametime = 0;
 	gametime += 1;
 	return 0;
 }
@@ -326,4 +309,69 @@ u0 update(game_t A) {
 
 
 
+void key(game_t * game, int ch) {
+	switch ( ch ) {
 
+		case KEY_DOWN:
+			if (game->y > 0 and game->y+(SIZE/2) > game->last_pos_y) {
+				game->y--;
+			}
+			break;
+
+		case KEY_UP:
+			if (game->y < MAX_SIZE) {
+				game->y++;
+			}
+			break;
+
+		case KEY_LEFT:
+			if ( game->x > 0 )
+			--game->x;
+			break;
+
+		case KEY_RIGHT:
+			if ( game->x < (WIDTH-1) )
+			++game->x;
+			break;
+
+		case KEY_HOME:
+			game->x = 0;
+			game->y = 0;
+			break;
+
+		//case KEY_END:
+		//    game.x = (cols - width);
+		//    game.y = (rows - height);
+		//    break;
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+u8 srand(u64 R) {
+	static u64 seed;
+	seed = seed *7 + R; // and it is cut to 64 bit -PR-
+	return seed; // cut to 8 bits
+	
+}
+u8 nrand(void) {
+	
+}
+u8 rand(void);
+*/
