@@ -10,7 +10,7 @@ typedef uint_fast8_t u8;
 typedef int_fast8_t s0;
 typedef uint_fast8_t u0;
 //typedef int_fast16_t s16;
-//typedef uint_fast16_t u16;
+typedef uint_fast16_t u16;
 //typedef int_fast32_t s32;
 //typedef uint_fast32_t u32;
 //typedef int_fast64_t s64;
@@ -34,9 +34,10 @@ typedef struct {
 	u64 seed;
 	char frog = '@';
 	char bocian = '%';
-	u8 ups = 10; // updates / s
+	u8 ups = 20; // updates / s
 	u8 fspeed = 2; // updates / frog speed
 	u8 bspeed = 10; // updates / bocian speed
+	s8 health = 20;
 } config_t;
 
 typedef struct {
@@ -61,6 +62,8 @@ typedef struct {
 	u8 frogtime = 0;
 	// „game” + „0-null 1-road 2-grass 3-water”
 	u8 road[MAX_SIZE][WIDTH] = {};
+	u16 score;
+	s8 health;
 	
 } game_t;
 
@@ -81,6 +84,7 @@ void setcolors(void) {
 	init_pair(2, COLOR_BLACK, COLOR_GREEN);
 	init_pair(3, COLOR_WHITE, COLOR_BLACK);
 	init_pair(4, COLOR_BLACK, COLOR_BLUE);
+	init_pair(5, COLOR_GREEN, COLOR_RED);
 }
 
 void setmap(game_t * game) {
@@ -93,6 +97,11 @@ void setmap(game_t * game) {
 		u8 V = (rand() % 3 == 0) ? gamegrass : gameroad;
 		for (u0 x = 0; x < MAX_SIZE; x++) {
 			game -> road[y][x] = V;
+		}
+		if (V == gamegrass) {
+			game -> road[y][rand()%WIDTH] = gametrash;
+			game -> road[y][rand()%WIDTH] = gametrash;
+			game -> road[y][rand()%WIDTH] = gametrash;
 		}
 	}
 }
@@ -114,7 +123,7 @@ game_t setup(void) {
     setcolors();
 
 	//noecho();
-	flushinp();
+	//flushinp();
 	nodelay(stdscr, TRUE);
     cbreak();
     keypad(stdscr, TRUE);
@@ -123,6 +132,7 @@ game_t setup(void) {
     game_t game;
 
     setmap(&game);
+    game.score = 0;
 
     return game;
 }
@@ -180,6 +190,8 @@ void printline(u8 A[WIDTH], u8 c[gametypes]) {
 			attron(COLOR_PAIR(3));
 		} else if (a == gamewater) {
 			attron(COLOR_PAIR(4));
+		} else if (a == gametrash) {
+			attron(COLOR_PAIR(5));
 		} else {
 			attron(COLOR_PAIR(2));
 		}
@@ -194,13 +206,13 @@ u8 printroad(game_t * game, const config_t config){
 	c[gamewater] = '=';
 	c[gametrash] = '%';
 	
-	if (game->last_pos_y < game->y) {
-		game->last_pos_y += 1;
+	if (game -> last_pos_y < game -> y) {
+		game -> last_pos_y += 1;
 	}
 	
 	for (int y = 0; y < SIZE; y++) {
 		move(WHEIGHT -y -1, MARGIN);
-		printline(game->road[game->last_pos_y + y], c);
+		printline(game -> road[game -> last_pos_y + y], c);
 	}
 	//if (Y >= fy) return 2; //lose
 	//if (fy >= SIZE+14) return 3; //win
@@ -216,6 +228,7 @@ int main() {
 
     config_t config;
     game_t game = setup();
+    game.health = config.health;
     
     srand(config.seed);
 
@@ -223,9 +236,10 @@ int main() {
 /*  Loop until user hits 'q' to quit  */
 
 	int      ch = 0;
-	while ( (ch = getch()) != 'q' and status < 2) { // {-1, 0, 1} car is moving a frog
+	while ( ch != 'q' and status < 2) { // {-1, 0, 1} car is moving a frog
 
 	if (game.frogtime >= config.fspeed) {
+		ch = getch();
 		key(&game, ch);
 		game.frogtime = 0;
 	}	game.frogtime += 1;
@@ -240,8 +254,16 @@ int main() {
         printint(game.x);
 
 		attron(COLOR_PAIR(2));
-		move(20, 0);
+		move(2, 0);
         printint(game.y);
+
+		attron(COLOR_PAIR(3));
+		move(4, 0);
+        printint(game.score);
+
+		attron(COLOR_PAIR(4));
+		move(7, 0);
+        printint(game.health);
 
 		//attron(COLOR_PAIR(4));
 		//move(21, 0);
@@ -257,7 +279,6 @@ int main() {
 
 		//t += 1;
     	refresh();
-		flushinp();
     	usleep(1e6/config.ups);
 
 		//bociany += bocian();
@@ -313,37 +334,52 @@ void key(game_t * game, int ch) {
 	switch ( ch ) {
 
 		case KEY_DOWN:
-			if (game->y > 0 and game->y+(SIZE/2) > game->last_pos_y) {
-				game->y--;
+			if (game -> y > 0 and game -> y+(SIZE/2) > game -> last_pos_y) {
+				if (game -> road[SIZE/2 + game -> y-1][game -> x] == gametrash)
+					game -> health -= 5;
+				else
+					game -> y--;
 			}
 			break;
 
 		case KEY_UP:
-			if (game->y < MAX_SIZE) {
-				game->y++;
+			if (game -> y < MAX_SIZE) {
+				if (game -> road[SIZE/2 + game -> y+1][game -> x] == gametrash)
+					game -> health -= 5;
+				else
+					game -> y++;
 			}
 			break;
 
 		case KEY_LEFT:
-			if ( game->x > 0 )
-			--game->x;
+			if ( game -> x > 0) {
+				if (game -> road[SIZE/2 + game -> y][game -> x-1] == gametrash)
+					game -> health -= 5;
+				else
+					game -> x--;
+			}
 			break;
 
 		case KEY_RIGHT:
-			if ( game->x < (WIDTH-1) )
-			++game->x;
+			if ( game -> x < (WIDTH-1)) {
+				if (game -> road[SIZE/2 + game -> y][game -> x+1] == gametrash)
+					game -> health -= 5;
+				else
+					game -> x++;
+			}
 			break;
 
-		case KEY_HOME:
-			game->x = 0;
-			game->y = 0;
-			break;
+		//case KEY_HOME:
+		//	game -> x = 0;
+		//	game -> y = 0;
+		//	break;
 
 		//case KEY_END:
 		//    game.x = (cols - width);
 		//    game.y = (rows - height);
 		//    break;
 	}
+	flushinp(); // clear input bufer -PR-
 }
 
 
