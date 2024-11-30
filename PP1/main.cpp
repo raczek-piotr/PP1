@@ -17,11 +17,6 @@ typedef uint_fast16_t u16;
 typedef uint_fast64_t u64;  //fast, at least 64bits; for time -PR-
 
 
-//u8 srand(u64);
-//u8 nrand(void);
-//u8 rand(void);
-
-
 #define WHEIGHT 23
 #define WWIDTH 80
 #define SIZE 18 //wysokość okna planszy -PR-
@@ -29,6 +24,11 @@ typedef uint_fast64_t u64;  //fast, at least 64bits; for time -PR-
 #define WIDTH 68
 #define MARGIN (WWIDTH-WIDTH)/2
 
+
+
+#define frogcolropucha 6 //ropucha
+#define frogcolrechotka 2 //rzechotka drzewna
+#define frogcolkumak 7 // kumak nizinny
 
 typedef struct {
 	u64 seed;
@@ -38,6 +38,8 @@ typedef struct {
 	u8 fspeed = 2; // updates / frog speed
 	u8 bspeed = 10; // updates / bocian speed
 	s8 health = 20;
+	u0 length = 100;
+	u8 frogcol = frogcolrechotka;
 } config_t;
 
 typedef struct {
@@ -46,7 +48,6 @@ typedef struct {
 	s0 coutdown;
 	s0 maxcoutdown;
 } car_t;
-
 
 
 #define gameroad 0
@@ -72,7 +73,7 @@ typedef struct {
 
 u8 bocian(game_t);
 u8 update(game_t);
-void key(game_t * game, int ch);
+void key(game_t & game, int ch);
 
 
 
@@ -81,43 +82,50 @@ void setcolors(void) {
 	curs_set(0);
 	start_color();
 	init_pair(1, COLOR_RED, COLOR_WHITE);
-	init_pair(2, COLOR_BLACK, COLOR_GREEN);
+	init_pair(2, COLOR_BLACK, COLOR_GREEN); // rzekotka + trawa!!!
 	init_pair(3, COLOR_WHITE, COLOR_BLACK);
 	init_pair(4, COLOR_BLACK, COLOR_BLUE);
 	init_pair(5, COLOR_GREEN, COLOR_RED);
+	init_pair(6, COLOR_GREEN, COLOR_YELLOW); // ropucha
+	init_pair(7, COLOR_RED, COLOR_GREEN); // kumak
 }
 
-void setmap(game_t * game) {
+void setmap(game_t & game, u0 L) {
 	for (u0 y = 0; y < (SIZE/2)+1; y++) {
-		for (u0 x = 0; x < MAX_SIZE; x++) {
-			game -> road[y][x] = gamewater;
+		for (u0 x = 0; x < WIDTH; x++) {
+			game.road[y][x] = gamewater;
 		}
 	}
-	for (u0 y = (SIZE/2)+1; y < MAX_SIZE; y++) {
+	for (u0 y = (SIZE/2)+1; y < L+(SIZE/2)+1; y++) {
 		u8 V = (rand() % 3 == 0) ? gamegrass : gameroad;
-		for (u0 x = 0; x < MAX_SIZE; x++) {
-			game -> road[y][x] = V;
+		for (u0 x = 0; x < WIDTH; x++) {
+			game.road[y][x] = V;
 		}
 		if (V == gamegrass) {
-			game -> road[y][rand()%WIDTH] = gametrash;
-			game -> road[y][rand()%WIDTH] = gametrash;
-			game -> road[y][rand()%WIDTH] = gametrash;
+			game.road[y][rand()%WIDTH] = gametrash;
+			game.road[y][rand()%WIDTH] = gametrash;
+			game.road[y][rand()%WIDTH] = gametrash;
+		}
+	}
+	for (u0 y = L+(SIZE/2)+1; y < MAX_SIZE; y++) {
+		for (u0 x = 0; x < WIDTH; x++) {
+			game.road[y][x] = gamewater;
 		}
 	}
 }
 
-game_t setup(void) {
+void setup(game_t & game, config_t & config) {
     initscr();
 
     if (has_colors() == FALSE) {
     endwin();
     printf("Your terminal does not support color\n");
-    exit(1);
+    exit(1); //ERR_CODE_1
     }
     if (resizeterm(WHEIGHT, WWIDTH) != 0) {
     endwin();
     printf("Your terminal does not support resizing\n");
-    exit(1);
+    exit(2); //ERR_CODE_2
     }
 
     setcolors();
@@ -128,13 +136,9 @@ game_t setup(void) {
     cbreak();
     keypad(stdscr, TRUE);
 
-
-    game_t game;
-
-    setmap(&game);
+	config.length = (config.length > MAX_SIZE - SIZE) ? MAX_SIZE - SIZE : config.length;
+    setmap(game, config.length);
     game.score = 0;
-
-    return game;
 }
 
 
@@ -199,20 +203,20 @@ void printline(u8 A[WIDTH], u8 c[gametypes]) {
 	}
 }
 
-u8 printroad(game_t * game, const config_t config){
+u8 printroad(game_t & game, const config_t & config){
 	static u8 c[gametypes] = {};              // do konfig
 	c[gameroad] = '-';
 	c[gamegrass] = '.';
 	c[gamewater] = '=';
 	c[gametrash] = '%';
 	
-	if (game -> last_pos_y < game -> y) {
-		game -> last_pos_y += 1;
+	if (game.last_pos_y < game.y) {
+		game.last_pos_y += 1;
 	}
 	
 	for (int y = 0; y < SIZE; y++) {
 		move(WHEIGHT -y -1, MARGIN);
-		printline(game -> road[game -> last_pos_y + y], c);
+		printline(game.road[game.last_pos_y + y], c);
 	}
 	//if (Y >= fy) return 2; //lose
 	//if (fy >= SIZE+14) return 3; //win
@@ -227,7 +231,8 @@ int main() {
 	s8 status = 0;
 
     config_t config;
-    game_t game = setup();
+    game_t game;
+    setup(game, config);
     game.health = config.health;
     
     srand(config.seed);
@@ -236,22 +241,22 @@ int main() {
 /*  Loop until user hits 'q' to quit  */
 
 	int      ch = 0;
-	while ( ch != 'q' and status < 2) { // {-1, 0, 1} car is moving a frog
+	while ( ch != 'q' and game.health > 0 and game.y < config.length) {//and status < 2) { // {-1, 0, 1} car is moving a frog
 
 	if (game.frogtime >= config.fspeed) {
 		ch = getch();
-		key(&game, ch);
+		key(game, ch);
 		game.frogtime = 0;
 	}	game.frogtime += 1;
 
 
 		clear();
 
-        status = printroad(&game, config);
+        status = printroad(game, config);
 
 		attron(COLOR_PAIR(1));
 		move(0, 0);
-        printint(game.x);
+        printint(config.frogcol);
 
 		attron(COLOR_PAIR(2));
 		move(2, 0);
@@ -273,7 +278,7 @@ int main() {
 		//move(20, MARGIN+x);
 		//addch(config.bocian);
 
-		attron(COLOR_PAIR(2));
+		attron(COLOR_PAIR(config.frogcol));
 		move(((WHEIGHT-(SIZE)/2))+game.last_pos_y-game.y -1, MARGIN+game.x);
 		addch(config.frog);
 
@@ -298,7 +303,7 @@ int main() {
 
 
 // update functions
-u0 bocian(game_t A) {
+u0 bocian(game_t & A) {
 	static u8 countdown = 0;
 	countdown += 1;
 	if (countdown > 10) return countdown = 1; //10
@@ -306,72 +311,55 @@ u0 bocian(game_t A) {
 }
 
 
-u0 update(game_t game) {
+u0 update(game_t & game) {
 	static u64 gametime = 0;
 	gametime += 1;
 	return 0;
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-void key(game_t * game, int ch) {
+void key(game_t & game, int ch) {
 	switch ( ch ) {
 
 		case KEY_DOWN:
-			if (game -> y > 0 and game -> y+(SIZE/2) > game -> last_pos_y) {
-				if (game -> road[SIZE/2 + game -> y-1][game -> x] == gametrash)
-					game -> health -= 5;
+			if (game.y > 0 and game.y+(SIZE/2) > game.last_pos_y) {
+				if (game.road[SIZE/2 + game.y-1][game.x] == gametrash)
+					game.health -= 5;
 				else
-					game -> y--;
+					game.y--;
 			}
 			break;
 
 		case KEY_UP:
-			if (game -> y < MAX_SIZE) {
-				if (game -> road[SIZE/2 + game -> y+1][game -> x] == gametrash)
-					game -> health -= 5;
+			if (game.y < MAX_SIZE) {
+				if (game.road[SIZE/2 + game.y+1][game.x] == gametrash)
+					game.health -= 5;
 				else
-					game -> y++;
+					game.y++;
 			}
 			break;
 
 		case KEY_LEFT:
-			if ( game -> x > 0) {
-				if (game -> road[SIZE/2 + game -> y][game -> x-1] == gametrash)
-					game -> health -= 5;
+			if ( game.x > 0) {
+				if (game.road[SIZE/2 + game.y][game.x-1] == gametrash)
+					game.health -= 5;
 				else
-					game -> x--;
+					game.x--;
 			}
 			break;
 
 		case KEY_RIGHT:
-			if ( game -> x < (WIDTH-1)) {
-				if (game -> road[SIZE/2 + game -> y][game -> x+1] == gametrash)
-					game -> health -= 5;
+			if ( game.x < (WIDTH-1)) {
+				if (game.road[SIZE/2 + game.y][game.x+1] == gametrash)
+					game.health -= 5;
 				else
-					game -> x++;
+					game.x++;
 			}
 			break;
 
 		//case KEY_HOME:
-		//	game -> x = 0;
-		//	game -> y = 0;
+		//	game.x = 0;
+		//	game.y = 0;
 		//	break;
 
 		//case KEY_END:
