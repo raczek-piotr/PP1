@@ -30,25 +30,9 @@ typedef uint_fast64_t u64;  //fast, at least 64bits; for time -PR-
 #define frogcolrechotka 2 //rzechotka drzewna
 #define frogcolkumak 7 // kumak nizinny
 
-typedef struct {
-	u64 seed;
-	char frog = '@';
-	char bocian = '%';
-	u8 ups = 20; // updates / s
-	u8 fspeed = 2; // updates / frog speed
-	u8 bspeed = 10; // updates / bocian speed
-	s8 health = 20;
-	u0 length = 100;
-	u8 frogcol = frogcolrechotka;
-} config_t;
-
-typedef struct {
-	s0 x;
-	s0 y;
-	s0 coutdown;
-	s0 maxcoutdown;
-} car_t;
-
+#define carnormal 0
+#define cartransport 1
+#define carstop 2
 
 #define gameroad 0
 #define gamegrass 1
@@ -56,7 +40,32 @@ typedef struct {
 #define gamewater 3
 #define gametypes 4
 
-typedef struct {
+typedef struct config_t {
+	u64 seed;
+	char frog = '@';
+	char bocian = '%';
+	char car = '#';
+	u8 ups = 20; // updates / s
+	u8 fspeed = 3; // updates / frog speed
+	u8 bspeed = 10; // updates / bocian speed
+	s8 health = 20;
+	u0 length = 100;
+	u8 frogcol = frogcolrechotka;
+	u8 tiles[gametypes] = {'-', '.', '=', '%'};
+	u8 cartimemod = 3;
+	u8 cartimedefault = 1;
+};
+
+typedef struct car_t {
+	s0 x;
+	s0 y;
+	u8 type = false;
+	s0 coutdown;
+	s0 maxcoutdown;
+	s8 dir = 0;
+};
+
+typedef struct game_t {
 	u0 y = 0;
 	u0 x = WIDTH/2;
 	u0 last_pos_y = 0;
@@ -65,15 +74,15 @@ typedef struct {
 	u8 road[MAX_SIZE][WIDTH] = {};
 	u16 score;
 	s8 health;
-	
-} game_t;
+	car_t cars[SIZE] = {}; // NULL's
+	u64 time = 0;
+};
 
 
 
-
+void printint(u64 a);
 u8 bocian(game_t);
-u8 update(game_t);
-void key(game_t & game, int ch);
+void key(game_t & game, config_t & config, int ch);
 
 
 
@@ -114,7 +123,7 @@ void setmap(game_t & game, u0 L) {
 	}
 }
 
-void setup(game_t & game, config_t & config) {
+void setup() {
     initscr();
 
     if (has_colors() == FALSE) {
@@ -130,26 +139,37 @@ void setup(game_t & game, config_t & config) {
 
     setcolors();
 
-	//noecho();
+	noecho();
 	//flushinp();
 	nodelay(stdscr, TRUE);
     cbreak();
     keypad(stdscr, TRUE);
+}
+
+void load(game_t & game, config_t & config) {
 
 	config.length = (config.length > MAX_SIZE - SIZE) ? MAX_SIZE - SIZE : config.length;
     setmap(game, config.length);
     game.score = 0;
+
+    for (u0 i = 0; i < SIZE; i++) {
+		game.cars[i].maxcoutdown = (rand() % config.cartimemod) + config.cartimedefault;
+		game.cars[i].coutdown = rand() % game.cars[i].maxcoutdown;
+		game.cars[i].type = (rand() % 2 == 0) ? 0 : rand() % 3; // 3 jest na razie na „chama” -PR-
+		game.cars[i].x=rand() % WIDTH;
+		game.cars[i].dir = (2 * (rand() % 2))-1;
+	}
 }
 
 
 
 // printing functions
-void printint(int a) {
+void printint_(u64 a) {
 	int t;
 	if (a > 0){
 		t = a % 10;
 		a /= 10;
-		printint(a);
+		printint_(a);
 		switch (t) {
 
 		case 0:
@@ -185,9 +205,16 @@ void printint(int a) {
 		}
 	}
 }
+void printint(u64 a) {
+	if (a == 0) {
+		addch('0');
+	} else {
+		printint_(a);
+	}
+}
 
 
-void printline(u8 A[WIDTH], u8 c[gametypes]) {
+void printline(u8 A[WIDTH], const u8 c[gametypes]) {
 	for (u0 x = {}; x < WIDTH; x += 1){
 		u8 a = A[x];
 		if (a == gameroad) {
@@ -203,24 +230,80 @@ void printline(u8 A[WIDTH], u8 c[gametypes]) {
 	}
 }
 
-u8 printroad(game_t & game, const config_t & config){
-	static u8 c[gametypes] = {};              // do konfig
-	c[gameroad] = '-';
-	c[gamegrass] = '.';
-	c[gamewater] = '=';
-	c[gametrash] = '%';
+void ruch(game_t & game){
+	car_t T = game.cars[SIZE-1];
+	for (u0 i = SIZE-1; i > 0; i--) {
+		game.cars[i] = game.cars[i-1];
+	}
+	game.cars[0] = T;
+}
+
+bool f_stop(u8 y1, u8 x1, u8 y2, u8 x2) {
+	s8 dy = y1 - y2;
+	float dx = x1 - x2 - 0.5;
+	return (dy*dy+dx*dx > 50);
+}
+
+s8 printcar(u0 Y, const config_t & config, car_t car[SIZE], u0 fy, u0 fx, bool active) {
+	if (active != 1) return 0;
+
+	u8 y = Y%SIZE;
+	car_t & C = car[y];
+	
+	if ((C.type != carstop) or f_stop(fy, fx, Y-(SIZE)/2, C.x)) {
+		if (C.maxcoutdown <= C.coutdown) {
+			C.x += C.dir;
+			C.coutdown = 0;
+
+			if (C.x < 0 or C.x > WIDTH -2) {
+				if (car[(Y+1)%SIZE].coutdown % 2 == 0) {
+					if (C.x < 0)
+						C.x = WIDTH -1;
+					else
+						C.x = -1;
+					C.coutdown += 0;
+				}
+				else if (C.x < 0) C.dir = 1;
+				else if (C.x > WIDTH -2) C.dir = -1;
+			}
+		} C.coutdown += 1;
+	}
+
+	move(Y, C.x + MARGIN);
+	attron(COLOR_PAIR(4+C.type));
+	addch(config.car);
+	addch(config.car);
+
+	if ((C.x == fx) or (C.x+1 == fx)) {
+		if (C.type != cartransport)
+			return 5;
+		else if (C.coutdown == C.maxcoutdown) {
+			if (C.x > 3 and C.x < WIDTH - 5)
+				return C.dir;
+			return 0;
+		}
+	}
+	return 0;
+}
+
+s8 printroad(game_t & game, const config_t & config){
+	u8 r = 0;
 	
 	if (game.last_pos_y < game.y) {
 		game.last_pos_y += 1;
+		ruch(game);
 	}
 	
 	for (int y = 0; y < SIZE; y++) {
 		move(WHEIGHT -y -1, MARGIN);
-		printline(game.road[game.last_pos_y + y], c);
+		printline(game.road[game.last_pos_y + y], config.tiles);
+		s8 info = printcar(WHEIGHT -y -1, config, game.cars, game.y, game.x, game.road[game.last_pos_y + y][0] == gameroad);
+		if (y == ((SIZE)/2)-game.last_pos_y+game.y) r = info;
 	}
 	//if (Y >= fy) return 2; //lose
 	//if (fy >= SIZE+14) return 3; //win
-	return 0;//printcar(road, MY, x, y);
+	//printcar(road, MY, x, y);
+	return r; //-1 ,  0 , 1
 }
 
 
@@ -232,7 +315,8 @@ int main() {
 
     config_t config;
     game_t game;
-    setup(game, config);
+    setup();
+    load(game, config);
     game.health = config.health;
     
     srand(config.seed);
@@ -241,42 +325,31 @@ int main() {
 /*  Loop until user hits 'q' to quit  */
 
 	int      ch = 0;
-	while ( ch != 'q' and game.health > 0 and game.y < config.length) {//and status < 2) { // {-1, 0, 1} car is moving a frog
+	while ( ch != 'q' and game.health > 0 and game.y < config.length+1) {//and status < 2) { // {-1, 0, 1} car is moving a frog
 
 	if (game.frogtime >= config.fspeed) {
 		ch = getch();
-		key(game, ch);
+		key(game, config, ch);
 		game.frogtime = 0;
 	}	game.frogtime += 1;
+		game.time += 1;
 
 
 		clear();
 
         status = printroad(game, config);
-
-		attron(COLOR_PAIR(1));
-		move(0, 0);
-        printint(config.frogcol);
-
-		attron(COLOR_PAIR(2));
-		move(2, 0);
-        printint(game.y);
-
-		attron(COLOR_PAIR(3));
-		move(4, 0);
-        printint(game.score);
+        if (status == 5) game.health = 0;
+        else game.x += status;
 
 		attron(COLOR_PAIR(4));
-		move(7, 0);
+		move(1, MARGIN);
+		printw("HEALTH: ");
         printint(game.health);
 
-		//attron(COLOR_PAIR(4));
-		//move(21, 0);
-        //printint(bociany);
-
-		//attron(COLOR_PAIR(1));
-		//move(20, MARGIN+x);
-		//addch(config.bocian);
+		attron(COLOR_PAIR(3));
+		move(2, MARGIN);
+		printw("TIME (s): ");
+        printint(game.time/config.ups);
 
 		attron(COLOR_PAIR(config.frogcol));
 		move(((WHEIGHT-(SIZE)/2))+game.last_pos_y-game.y -1, MARGIN+game.x);
@@ -289,6 +362,12 @@ int main() {
 		//bociany += bocian();
     }
 
+
+	attron(COLOR_PAIR(1));
+	move(((WHEIGHT-(SIZE)/2))+game.last_pos_y-game.y -1, MARGIN+game.x);
+	addch(config.frog);
+    refresh();
+    usleep(1e6);
 
     /*  Clean up after ourselves  */
 
@@ -310,15 +389,73 @@ u0 bocian(game_t & A) {
 	return 0;
 }
 
-
-u0 update(game_t & game) {
-	static u64 gametime = 0;
-	gametime += 1;
-	return 0;
+void pref(game_t & game, config_t & config) {
+	int inp = '\0';
+	u8 menu = 0;
+	while (inp != 'q' or menu != 0) {
+		if (inp == 'q') menu = 0;
+		clear();
+		attron(COLOR_PAIR(3));
+			move(4, 4);
+        //printint(config.frogcol);
+		if (menu == 0) {
+			printw("Preferences:");
+			move(5, 8);
+			printw("(1) frog color");
+			move(6, 8);
+			printw("(2) seed");
+			inp = getch();
+			if (inp == '1')
+				menu = 1;
+			else if (inp == '2')
+				menu = 2;
+		} else if (menu == 1) {
+			printw("Frog color:");
+			move(5, 10);
+			printw("(1) rekotka");
+			move(6, 10);
+			printw("(2) ropucha");
+			move(7, 10);
+			printw("(3) kumak");
+			move(5, 8);
+		attron(COLOR_PAIR(frogcolrechotka));
+			printw("@");
+			move(6, 8);
+		attron(COLOR_PAIR(frogcolropucha));
+			printw("@");
+			move(7, 8);
+		attron(COLOR_PAIR(frogcolkumak));
+			printw("@");
+			inp = getch();
+			if (inp == '1')
+				config.frogcol = frogcolrechotka;
+			else if (inp == '2')
+				config.frogcol = frogcolropucha;
+			else if (inp == '3')
+				config.frogcol = frogcolkumak;
+		} else { //menu == 2
+			printw("seed = ");
+			printint(config.seed);
+			move(5, 10);
+			printw("(+) +10");
+			move(6, 10);
+			printw("(-) -1");
+			move(7, 10);
+			printw("(0) =0");
+			inp = getch();
+			if (inp == '=')
+				config.seed += +10;
+			else if (inp == '-')
+				config.seed += -1;
+			else if (inp == '0')
+				config.seed = 0;
+		}
+		refresh();
+    	usleep(1e6/10);
+	}
 }
 
-
-void key(game_t & game, int ch) {
+void key(game_t & game, config_t & config, int ch) {
 	switch ( ch ) {
 
 		case KEY_DOWN:
@@ -357,6 +494,11 @@ void key(game_t & game, int ch) {
 			}
 			break;
 
+		case 'p':
+			pref(game, config);
+			break;
+
+
 		//case KEY_HOME:
 		//	game.x = 0;
 		//	game.y = 0;
@@ -369,33 +511,3 @@ void key(game_t & game, int ch) {
 	}
 	flushinp(); // clear input bufer -PR-
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-u8 srand(u64 R) {
-	static u64 seed;
-	seed = seed *7 + R; // and it is cut to 64 bit -PR-
-	return seed; // cut to 8 bits
-	
-}
-u8 nrand(void) {
-	
-}
-u8 rand(void);
-*/
