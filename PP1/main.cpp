@@ -1,9 +1,12 @@
-#include <stdlib.h>
+//#include <stdlib.h>
 //#include <iostream>
 //#include <stdio.h>
 #include <curses.h>
 //#include <time.h>
 #include <unistd.h>
+#include <fstream>
+
+using namespace std;
 
 typedef int_fast8_t s8;
 typedef uint_fast8_t u8;
@@ -40,7 +43,7 @@ typedef uint_fast64_t u64;  //fast, at least 64bits; for time -PR-
 #define gamewater 3
 #define gametypes 4
 
-typedef struct config_t {
+struct config_t {
 	u64 seed;
 	char frog = '@';
 	char bocian = '%';
@@ -56,7 +59,7 @@ typedef struct config_t {
 	u8 cartimedefault = 1;
 };
 
-typedef struct car_t {
+struct car_t {
 	s0 x;
 	s0 y;
 	u8 type = false;
@@ -65,7 +68,7 @@ typedef struct car_t {
 	s8 dir = 0;
 };
 
-typedef struct game_t {
+struct game_t {
 	u0 y = 0;
 	u0 x = WIDTH/2;
 	u0 last_pos_y = 0;
@@ -148,6 +151,31 @@ void setup() {
 
 void load(game_t & game, config_t & config) {
 
+	char T[10];
+	u8 t, l = 0;
+	int m;
+	FILE * F;
+	F = fopen("conf.txt", "r");
+		
+	if(F){
+		fgets(T, 7, F);
+		fgets(T, 2, F);
+		config.frogcol = T[0] - '0';
+		fgets(T, 7, F);
+		//fgets(T, 8, F);
+		fscanf(F, "%d", & m);
+		//for (u8 i = 0; i < 3; i++) {
+		//	fgets(T, 2, F);
+		//	t = T[0] - '0';
+		//	l *= 10;
+		//	if (t < 10)
+		//		l += t;
+		//}
+		
+		config.length = m;
+		fclose(F);
+	}
+
 	config.length = (config.length > MAX_SIZE - SIZE) ? MAX_SIZE - SIZE : config.length;
     setmap(game, config.length);
     game.score = 0;
@@ -159,6 +187,7 @@ void load(game_t & game, config_t & config) {
 		game.cars[i].x=rand() % WIDTH;
 		game.cars[i].dir = (2 * (rand() % 2))-1;
 	}
+
 }
 
 
@@ -211,7 +240,7 @@ void printint(u64 a) {
 	} else {
 		printint_(a);
 	}
-}
+} /// zostały wymagania = 12i, 13i, olej = 14i, 11
 
 
 void printline(u8 A[WIDTH], const u8 c[gametypes]) {
@@ -239,19 +268,22 @@ void ruch(game_t & game){
 }
 
 bool f_stop(u8 y1, u8 x1, u8 y2, u8 x2) {
-	s8 dy = y1 - y2;
+	s8 dy = (y1 - y2) * 4;
 	float dx = x1 - x2 - 0.5;
-	return (dy*dy+dx*dx > 50);
+	return (dy*dy+dx*dx > 35);
 }
 
-s8 printcar(u0 Y, const config_t & config, car_t car[SIZE], u0 fy, u0 fx, bool active) {
+s8 printcar(u0 Y, const config_t & config, car_t car[SIZE], u0 fy, s0 dy, u0 fx, bool active) {
 	if (active != 1) return 0;
 
-	u8 y = Y%SIZE;
-	car_t & C = car[y];
+	s8 moved = 0;
+	u8 y = WHEIGHT-(SIZE/2)+dy-1;
+	car_t & C = car[Y%SIZE];
 	
-	if ((C.type != carstop) or f_stop(fy, fx, Y-(SIZE)/2, C.x)) {
+	if ((C.type != carstop) or f_stop(y, fx, Y, C.x)) {
 		if (C.maxcoutdown <= C.coutdown) {
+			if (fx + C.dir > 0 and fx + C.dir < WIDTH - 1)
+				moved = C.dir;
 			C.x += C.dir;
 			C.coutdown = 0;
 
@@ -274,14 +306,13 @@ s8 printcar(u0 Y, const config_t & config, car_t car[SIZE], u0 fy, u0 fx, bool a
 	addch(config.car);
 	addch(config.car);
 
-	if ((C.x == fx) or (C.x+1 == fx)) {
-		if (C.type != cartransport)
+	
+	if (C.type != cartransport) {
+		if ((C.x == fx) or (C.x+1 == fx))
 			return 5;
-		else if (C.coutdown == C.maxcoutdown) {
-			if (C.x > 3 and C.x < WIDTH - 5)
-				return C.dir;
-			return 0;
-		}
+	} else {
+		if ((C.x-moved == fx) or (C.x-moved+1 == fx))
+			return moved;
 	}
 	return 0;
 }
@@ -297,7 +328,7 @@ s8 printroad(game_t & game, const config_t & config){
 	for (int y = 0; y < SIZE; y++) {
 		move(WHEIGHT -y -1, MARGIN);
 		printline(game.road[game.last_pos_y + y], config.tiles);
-		s8 info = printcar(WHEIGHT -y -1, config, game.cars, game.y, game.x, game.road[game.last_pos_y + y][0] == gameroad);
+		s8 info = printcar(WHEIGHT -y -1, config, game.cars, game.y, game.last_pos_y-game.y, game.x, game.road[game.last_pos_y + y][0] == gameroad);
 		if (y == ((SIZE)/2)-game.last_pos_y+game.y) r = info;
 	}
 	//if (Y >= fy) return 2; //lose
