@@ -106,7 +106,7 @@ void setcolors(void) {
 	init_pair(3, COLOR_WHITE, COLOR_BLACK);
 	init_pair(4, COLOR_BLACK, COLOR_BLUE);
 	init_pair(5, COLOR_GREEN, COLOR_RED);
-	init_pair(6, COLOR_GREEN, COLOR_YELLOW); // ropucha
+	init_pair(6, COLOR_BLACK, COLOR_YELLOW); // ropucha
 	init_pair(7, COLOR_RED, COLOR_GREEN); // kumak
 }
 
@@ -291,9 +291,7 @@ bool f_stop(u8 y1, u8 x1, u8 y2, u8 x2) {
 	return (dy*dy+dx*dx > 35);
 }
 
-s8 printcar(u0 Y, const config_t & config, car_t car[SIZE], u0 fy, s0 dy, u0 fx, bool active) {
-	if (active != 1) return 0;
-
+s8 printcar(u0 Y, const config_t & config, car_t car[SIZE], u0 fy, s0 dy, u0 fx) {
 	s8 moved = 0;
 	u8 y = WHEIGHT-(SIZE/2)+dy-1;
 	car_t & C = car[Y%SIZE];
@@ -311,7 +309,7 @@ s8 printcar(u0 Y, const config_t & config, car_t car[SIZE], u0 fy, s0 dy, u0 fx,
 						C.x = WIDTH -1;
 					else
 						C.x = -1;
-					C.coutdown += 0;
+					C.coutdown += 1;
 				}
 				else if (C.x < 0) C.dir = 1;
 				else if (C.x > WIDTH -2) C.dir = -1;
@@ -324,7 +322,7 @@ s8 printcar(u0 Y, const config_t & config, car_t car[SIZE], u0 fy, s0 dy, u0 fx,
 	addch(config.car);
 	addch(config.car);
 
-	
+
 	if (C.type != cartransport) {
 		if ((C.x == fx) or (C.x+1 == fx))
 			return 5;
@@ -346,20 +344,15 @@ s8 printroad(game_t & game, const config_t & config) {
 	for (int y = 0; y < SIZE; y++) {
 		move(WHEIGHT -y -1, MARGIN);
 		printline(game.road[game.last_pos_y + y], config.tiles);
-		s8 info = printcar(WHEIGHT -y -1, config, game.cars, game.y, game.last_pos_y-game.y, game.x, game.road[game.last_pos_y + y][0] == gameroad);
-		if (y == ((SIZE)/2)-game.last_pos_y+game.y) r = info;
+		if (game.road[game.last_pos_y + y][0] == gameroad) {
+			s8 info = printcar(WHEIGHT -y -1, config, game.cars, game.y, game.last_pos_y-game.y, game.x);
+			if (y == ((SIZE)/2)-game.last_pos_y+game.y) r = info;
+		}
 	}
 	return r; //-1 ,  0 , 1 or 5
 }
 
 void printall(game_t & game, const config_t & config) {
-	clear();
-
-	status = printroad(game, config);
-	if (status == 5) game.health = 0;
-	else game.x += status;
-	status = bocian(game, config);
-	if (status == 5) game.health = 0;
 
 	attron(COLOR_PAIR(3));
 	move(1, MARGIN);
@@ -418,6 +411,13 @@ int main() {
 		game.timedown -= 1;
 		if (game.timedown == 0) game.health = 0;
 
+		clear();
+
+		status = printroad(game, config);
+		if (status == 5) game.health = 0;
+		else game.x += status;
+		status = bocian(game, config);
+		if (status == 5) game.health = 0;
 		printall(game, config);
 		refresh();
 		usleep(1e6/config.ups);
@@ -458,7 +458,7 @@ u0 bocian(game_t & game, config_t & config) {
 
 		game.bociantime = 0;
 	}	game.bociantime += 1;
-	if (game.x == game.bx and game.y == game.by) return 5;
+	if (game.x == game.bx and game.y == game.by) return 6;
 	return 0;
 }
 
