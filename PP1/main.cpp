@@ -408,9 +408,11 @@ int main() {
 		move(3, MARGIN);
 		printw("LEFT (s): ");
 		printint(game.timedown/config.ups);
+		move(WWIDTH-WWIDTH+23, MARGIN);
+		printw("Piotr Raczek s202366");
 
 		int t = game.last_pos_y-game.y -1+game.y-game.by;
-		if (game.level > 1 and t >= -(SIZE)/2 and t <= (SIZE)/2) {
+		if (game.level > 1 and t >= -(SIZE)/2 and t < (SIZE)/2) {
 			attron(COLOR_PAIR(1));
 			move(((WHEIGHT-(SIZE)/2))+t, MARGIN+game.bx);
 			addch(config.bocian);
