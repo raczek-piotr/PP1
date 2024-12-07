@@ -142,16 +142,10 @@ void setup() {
 	printf("Your terminal does not support color\n");
 	exit(1); //ERR_CODE_1
 	}
-	//if (resizeterm(WHEIGHT, WWIDTH) != 0) {
-	//endwin();
-	//printf("Your terminal does not support resizing\n");
-	//exit(2); //ERR_CODE_2
-	//}
 
 	setcolors();
 
 	noecho();
-	//flushinp();
 	nodelay(stdscr, TRUE);
 	cbreak();
 	keypad(stdscr, TRUE);
@@ -217,8 +211,6 @@ void selectlevel(game_t & game) {
 	}
 }
 
-
-
 // printing functions
 void printint_(u64 a) {
 	int t;
@@ -267,8 +259,7 @@ void printint(u64 a) {
 	} else {
 		printint_(a);
 	}
-} /// zostały wymagania = 12i, 13i; olej = 14i, 11
-
+}
 
 void printline(u8 A[WIDTH], const u8 c[gametypes]) {
 	for (u0 x = {}; x < WIDTH; x += 1){
@@ -344,7 +335,7 @@ s8 printcar(u0 Y, const config_t & config, car_t car[SIZE], u0 fy, s0 dy, u0 fx,
 	return 0;
 }
 
-s8 printroad(game_t & game, const config_t & config){
+s8 printroad(game_t & game, const config_t & config) {
 	u8 r = 0;
 	
 	if (game.last_pos_y < game.y) {
@@ -361,7 +352,44 @@ s8 printroad(game_t & game, const config_t & config){
 	return r; //-1 ,  0 , 1 or 5
 }
 
+void printall(game_t & game, const config_t & config) {
+	clear();
 
+	status = printroad(game, config);
+	if (status == 5) game.health = 0;
+	else game.x += status;
+	status = bocian(game, config);
+	if (status == 5) game.health = 0;
+
+	attron(COLOR_PAIR(3));
+	move(1, MARGIN);
+	printw("HEALTH: ");
+	printint(game.health);
+	move(2, MARGIN);
+	printw("TIME (s): ");
+	printint(game.time/config.ups);
+	move(3, MARGIN);
+	printw("LEFT (s): ");
+	printint(game.timedown/config.ups);
+	move(WWIDTH-WWIDTH+23, MARGIN);
+	printw("Piotr Raczek s202366");
+
+	int t = game.last_pos_y-game.y -1+game.y-game.by;
+	if (game.level > 1 and t >= -(SIZE)/2 and t < (SIZE)/2) {
+		attron(COLOR_PAIR(1));
+		move(((WHEIGHT-(SIZE)/2))+t, MARGIN+game.bx);
+		addch(config.bocian);
+	}
+
+	attron(COLOR_PAIR(config.frogcol));
+	move(((WHEIGHT-(SIZE)/2))+game.last_pos_y-game.y -1, MARGIN+game.x);
+	addch(config.frog);
+
+	if (game.darktime >= config.darktime) {
+		game.darktime = 0;
+	}	game.darktime += 1;
+	if (game.level > 2 and ((game.darktime >= 6 and game.darktime <= 9) or game.darktime == 13 or game.darktime == 14)) clear();
+}
 
 // main function
 int main() {
@@ -390,42 +418,7 @@ int main() {
 		game.timedown -= 1;
 		if (game.timedown == 0) game.health = 0;
 
-		clear();
-
-		status = printroad(game, config);
-		if (status == 5) game.health = 0;
-		else game.x += status;
-		status = bocian(game, config);
-		if (status == 5) game.health = 0;
-
-		attron(COLOR_PAIR(3));
-		move(1, MARGIN);
-		printw("HEALTH: ");
-		printint(game.health);
-		move(2, MARGIN);
-		printw("TIME (s): ");
-		printint(game.time/config.ups);
-		move(3, MARGIN);
-		printw("LEFT (s): ");
-		printint(game.timedown/config.ups);
-		move(WWIDTH-WWIDTH+23, MARGIN);
-		printw("Piotr Raczek s202366");
-
-		int t = game.last_pos_y-game.y -1+game.y-game.by;
-		if (game.level > 1 and t >= -(SIZE)/2 and t < (SIZE)/2) {
-			attron(COLOR_PAIR(1));
-			move(((WHEIGHT-(SIZE)/2))+t, MARGIN+game.bx);
-			addch(config.bocian);
-		}
-
-		attron(COLOR_PAIR(config.frogcol));
-		move(((WHEIGHT-(SIZE)/2))+game.last_pos_y-game.y -1, MARGIN+game.x);
-		addch(config.frog);
-
-		if (game.darktime >= config.darktime) {
-			game.darktime = 0;
-		}	game.darktime += 1;
-		if (game.level > 2 and (game.darktime == 6 or game.darktime == 7 or game.darktime == 8 or game.darktime == 9 or game.darktime == 13 or game.darktime == 14)) clear();
+		printall(game, config);
 		refresh();
 		usleep(1e6/config.ups);
 	}
@@ -448,9 +441,6 @@ int main() {
 	return EXIT_SUCCESS;
 }
 
-
-
-
 // update functions
 u0 bocian(game_t & game, config_t & config) {
 	if (game.level < 2) return 0;
@@ -471,72 +461,6 @@ u0 bocian(game_t & game, config_t & config) {
 	if (game.x == game.bx and game.y == game.by) return 5;
 	return 0;
 }
-
-/*void pref(game_t & game, config_t & config) {
-	int inp = '\0';
-	u8 menu = 0;
-	while (inp != 'q' or menu != 0) {
-		if (inp == 'q') menu = 0;
-		clear();
-		attron(COLOR_PAIR(3));
-			move(4, 4);
-		//printint(config.frogcol);
-		if (menu == 0) {
-			printw("Preferences:");
-			move(5, 8);
-			printw("(1) frog color");
-			move(6, 8);
-			printw("(2) seed");
-			inp = getch();
-			if (inp == '1')
-				menu = 1;
-			else if (inp == '2')
-				menu = 2;
-		} else if (menu == 1) {
-			printw("Frog color:");
-			move(5, 10);
-			printw("(1) rekotka");
-			move(6, 10);
-			printw("(2) ropucha");
-			move(7, 10);
-			printw("(3) kumak");
-			move(5, 8);
-		attron(COLOR_PAIR(frogcolrechotka));
-			printw("@");
-			move(6, 8);
-		attron(COLOR_PAIR(frogcolropucha));
-			printw("@");
-			move(7, 8);
-		attron(COLOR_PAIR(frogcolkumak));
-			printw("@");
-			inp = getch();
-			if (inp == '1')
-				config.frogcol = frogcolrechotka;
-			else if (inp == '2')
-				config.frogcol = frogcolropucha;
-			else if (inp == '3')
-				config.frogcol = frogcolkumak;
-		} else { //menu == 2
-			printw("seed = ");
-			printint(config.seed);
-			move(5, 10);
-			printw("(+) +10");
-			move(6, 10);
-			printw("(-) -1");
-			move(7, 10);
-			printw("(0) =0");
-			inp = getch();
-			if (inp == '=')
-				config.seed += +10;
-			else if (inp == '-')
-				config.seed += -1;
-			else if (inp == '0')
-				config.seed = 0;
-		}
-		refresh();
-		usleep(1e6/10);
-	}
-}*/
 
 void key(game_t & game, config_t & config, int ch) {
 	switch ( ch ) {
@@ -565,7 +489,6 @@ void key(game_t & game, config_t & config, int ch) {
 					game.health -= 5;
 				else
 					game.x--;
-	u8 bspeed = 10; // updates / bocian speed
 			}
 			break;
 
@@ -577,21 +500,6 @@ void key(game_t & game, config_t & config, int ch) {
 					game.x++;
 			}
 			break;
-
-//		case 'p':
-//			pref(game, config);
-//			break;
-
-
-		//case KEY_HOME:
-		//	game.x = 0;
-		//	game.y = 0;
-		//	break;
-
-		//case KEY_END:
-		//	game.x = (cols - width);
-		//	game.y = (rows - height);
-		//	break;
 	}
 	flushinp(); // clear input bufer -PR-
 }
