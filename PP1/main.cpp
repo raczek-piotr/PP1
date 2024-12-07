@@ -68,6 +68,7 @@ struct car_t {
 	s0 coutdown;
 	s0 maxcoutdown;
 	s8 dir = 0;
+	u8 seed;
 };
 
 struct game_t {
@@ -92,6 +93,7 @@ struct game_t {
 
 
 void printint(u64 a);
+void printrank(void);
 u8 bocian(game_t & game, config_t & config);
 void key(game_t & game, config_t & config, int ch);
 
@@ -160,10 +162,10 @@ void load(game_t & game, config_t & config) {
 	F = fopen("conf.txt", "r");
 
 	if(F){
-		fgets(T, 7, F);
-		fgets(T, 2, F);
-		config.frogcol = T[0] - '0';
-		fgets(T, 7, F);
+		//fgets(T, 7, F);
+		//fgets(T, 2, F);
+		//config.frogcol = T[0] - '0';
+		fgets(T, 6, F);
 		fscanf(F, "%d", & m);
 		config.length = m;
 		fgets(T, 7, F);
@@ -182,12 +184,14 @@ void load(game_t & game, config_t & config) {
 		game.cars[i].type = (rand() % 2 == 0) ? 0 : rand() % 3; // 3 jest na razie na „chama” -PR-
 		game.cars[i].x=rand() % WIDTH;
 		game.cars[i].dir = (2 * (rand() % 2))-1;
+		game.cars[i].seed = rand()%256;
 	}
 }
 
-void selectlevel(game_t & game) {
+void selectlevel(game_t & game, config_t & config) {
 	game.level = 0;
-	attron(COLOR_PAIR(5));
+	config.frogcol = 0;
+	attron(COLOR_PAIR(3));
 	int inp;
 	while (game.level == 0) {
 		clear();
@@ -196,9 +200,9 @@ void selectlevel(game_t & game) {
 		move(6, 10);
 		printw("(1) Easy Level");
 		move(7, 10);
-		printw("(2) Hard Level");
+		printw("(2) Hard Level (with stork)");
 		move(8, 10);
-		printw("(3) Frog Master Level");
+		printw("(3) Frog Master Level (with stork & storm)");
 		inp = getch();
 		if (inp == '1')
 			game.level = 1;
@@ -206,6 +210,28 @@ void selectlevel(game_t & game) {
 			game.level = 2;
 		else if (inp == '3')
 			game.level = 3;
+		refresh();
+		usleep(1e6/10);
+	}
+	flushinp();
+	inp = 0;
+	while (config.frogcol == 0) {
+		clear();
+		move(5, 10);
+		printw("Play as:");
+		move(6, 10);
+		printw("(1) Rzekotka Drzewna");
+		move(7, 10);
+		printw("(2) Ropucha");
+		move(8, 10);
+		printw("(3) Kumak Nizinny");
+		inp = getch();
+		if (inp == '1')
+			config.frogcol = 6;
+		else if (inp == '2')
+			config.frogcol = 2;
+		else if (inp == '3')
+			config.frogcol = 7;
 		refresh();
 		usleep(1e6/10);
 	}
@@ -298,21 +324,22 @@ s8 printcar(u0 Y, const config_t & config, car_t car[SIZE], u0 fy, s0 dy, u0 fx)
 
 	if ((C.type != carstop) or f_stop(y, fx, Y, C.x)) {
 		if (C.maxcoutdown <= C.coutdown) {
-			if (fx + C.dir > 0 and fx + C.dir < WIDTH - 1)
+			if (fx + C.dir > 2 and fx + C.dir < WIDTH - 3)
 				moved = C.dir;
 			C.x += C.dir;
 			C.coutdown = 0;
 
 			if (C.x < 0 or C.x > WIDTH -2) {
-				if (car[(Y+1)%SIZE].coutdown % 2 == 0) {
+				if (C.seed % 2 == 0) {
 					if (C.x < 0)
 						C.x = WIDTH -1;
 					else
 						C.x = -1;
 					C.coutdown += 1;
-				}
-				else if (C.x < 0) C.dir = 1;
-				else if (C.x > WIDTH -2) C.dir = -1;
+				} else C.dir *= -1;
+				C.type = ((C.seed/5) % 2 == 0) ? 0 : (C.seed/15) % 3; // 3 jest na razie na „chama”
+				C.maxcoutdown=config.cartimedefault+C.seed%config.cartimemod;
+				C.seed = (C.seed*5+3)%256;
 			}
 		} C.coutdown += 1;
 	}
@@ -381,7 +408,58 @@ void printall(game_t & game, const config_t & config) {
 	if (game.darktime >= config.darktime) {
 		game.darktime = 0;
 	}	game.darktime += 1;
-	if (game.level > 2 and ((game.darktime >= 6 and game.darktime <= 9) or game.darktime == 13 or game.darktime == 14)) clear();
+	if (game.level > 2 and ((game.darktime >= 6 and game.darktime <= 9) or game.darktime/2 == 7)) clear();
+}
+
+void ranking(game_t & game, config_t & config) {
+	attron(COLOR_PAIR(1));
+	move(((WHEIGHT-(SIZE)/2))+game.last_pos_y-game.y -1, MARGIN+game.x);
+	addch(config.frog);
+	refresh();
+	usleep(1e6);
+
+	u64 score = game.health+game.level*game.last_pos_y+game.timedown/config.ups;
+	u64 w[3] = {0, 0, 0}, m;
+	FILE * F;
+	F = fopen("rank.txt", "r");
+
+	if(F){
+		for (u8 i = 0; i < 3; i++)
+			fscanf(F, "%d", & w[i]);
+		fclose(F);
+	}
+	
+	switch (config.frogcol) {
+		case 6:
+			m = 0;
+			break;
+		case 2:
+			m = 1;
+			break;
+		case 7:
+			m = 2;
+			break;
+	}
+
+	if (w[m] < score) {
+		w[m] = score;
+		FILE * G;
+		G = fopen("rank.txt", "w");
+		for (u8 i = 0; i < 3; i++)
+			fprintf(G, "%d\n", w[i]);
+		fclose(G);
+	}
+
+	clear();
+	attron(COLOR_PAIR(3));
+	move(3, MARGIN);
+	printw("YOUR SCORE: ");
+	printint(score);
+
+	printrank();
+
+	refresh();
+	usleep(1e6 * 5);
 }
 
 // main function
@@ -395,7 +473,7 @@ int main() {
 	load(game, config);
 	game.health = config.health;
 	game.timedown = config.timedown * config.ups -1;
-	selectlevel(game);
+	selectlevel(game, config);
 
 	srand(config.seed);
 
@@ -423,13 +501,9 @@ int main() {
 		usleep(1e6/config.ups);
 	}
 
-
-	attron(COLOR_PAIR(1));
-	move(((WHEIGHT-(SIZE)/2))+game.last_pos_y-game.y -1, MARGIN+game.x);
-	addch(config.frog);
-	refresh();
-	usleep(1e6);
+	ranking(game, config);
 	flushinp();
+	usleep(1e6/20);
 	getch();
 
 	/*  Clean up after ourselves  */
@@ -502,4 +576,25 @@ void key(game_t & game, config_t & config, int ch) {
 			break;
 	}
 	flushinp(); // clear input bufer -PR-
+}
+
+void printrank() {
+	u64 w[3] = {0, 0, 0}, m;
+	FILE * F;
+	F = fopen("rank.txt", "r");
+
+	if(F){
+		for (u8 i = 0; i < 3; i++)
+			fscanf(F, "%d", & w[i]);
+		fclose(F);
+	}
+
+	move(5, 10);
+	printw("Ranking:");
+	move(6, 10);
+	printw("Rzekotka Drzewna "); printint(w[0]);
+	move(7, 10);
+	printw("Ropucha "); printint(w[1]);
+	move(8, 10);
+	printw("Kumak Nizinny "); printint(w[2]);
 }
